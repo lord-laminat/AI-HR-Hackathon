@@ -1,3 +1,7 @@
+# FastAPI + Uvicorn
+fastapi
+uvicorn
+
 # Langchain + MCP
 
 langchain
