@@ -17,8 +17,8 @@ class JobParameters(BaseModel):
     определяется соответствие кандидата вакансии.
     """
     experience_years: float
-    hard_skills: List[str]
-    soft_skills: List[str]
+    hard_skills: List[Tuple[str, int]]
+    soft_skills: List[Tuple[str, int]]
 
 
 class JobDescription(BaseModel):
