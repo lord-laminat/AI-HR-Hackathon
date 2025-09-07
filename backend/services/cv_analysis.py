@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
 from schemas.cv_analysis import JobDescription
-from repositories.cv_analysis import JobRepository, JobParameters, VacancyMatchingReport
+from repositories.cv_analysis import VacancyRepository, JobParameters, VacancyMatchingReport
 
 
 class State(TypedDict):

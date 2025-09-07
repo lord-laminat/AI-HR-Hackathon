@@ -2,10 +2,26 @@ from schemas.cv_analysis import JobDescription
 from configs.config import config
 
 
-class JobRepository:
+class VacancyRepository:
     """ Класс, описывающий хранение объектов JobDescription. """
 
-    def get_job_description(self, file_title: str) -> JobDescription:
+    def get_vacancies_list(self) -> List[str]:
+        """ Возвращает список полных путей до файлов, лежащих в директории для вакансий. """
+        directory_path = config["Paths"]["vacancies_dir_path"]
+        files = list()
+
+        # итерация по всем именам в директории (файлы и папки)
+        for entry in os.listdir(directory_path):
+            full_path = os.path.join(directory_path, entry)
+            
+            # убеждаемся, что выбранное имя - файл
+            if os.path.isfile(full_path):
+                files.append(entry)
+
+        return files
+
+
+    def get_vacancy_description(self, file_title: str) -> JobDescription:
         """ Достаёт объект JobDescription из хранилища. """
         
         job_description: JobDescription
@@ -22,16 +38,16 @@ class JobRepository:
         return job_description
 
 
-    def create_job_description(self, JobDescription) -> None:
+    def create_vacancy_description(self, JobDescription) -> None:
         """ Создаёт объект JobDescription в хранилище. """
         raise NotImplementedError("Is not implemented yet.")
 
 
-    def delete_job_description(self, JobDescription) -> None:
+    def delete_vacancy_description(self, JobDescription) -> None:
         """ Удаляет объект JobDescription из хранилища. """
         raise NotImplementedError("Is not implemented yet.")
 
 
-    def update_job_description(self, JobDescription) -> None:
+    def update_vacancy_description(self, JobDescription) -> None:
         """ Изменяет объект JobDescription в хранилище. """
         raise NotImplementedError("Is not implemented yet.")
