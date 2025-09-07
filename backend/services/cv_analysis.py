@@ -43,7 +43,7 @@ class CVAnalyseService:
             base_url="https://openrouter.ai/api/v1",
             temperature=temperature
         )
-        self.workflow = self_create_workflow()
+        self.workflow = self._create_workflow()
 
 
     def _create_workflow(self) -> StateGraph:
