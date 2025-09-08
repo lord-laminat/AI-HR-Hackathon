@@ -24,7 +24,7 @@ class State(TypedDict):
     matching_reports: List[VacancyMatchingReport]
 
 
-class CVAnalyseService:
+class CVAnalysisService:
     """
     Сервис по определению ключевых параметров
     в резюме и формированию объекта JobParameters.
@@ -32,7 +32,7 @@ class CVAnalyseService:
 
     def __init__(
             self,
-            repository: JobRepository,
+            repository: VacancyRepository,
             model_name: str,
             temperature: float
     ) -> None:
@@ -64,19 +64,19 @@ class CVAnalyseService:
         return workflow.compile()
 
 
-    def _analyse_cv(self, state: State) -> Dict[str, JobParameters]:
+    async def _analyse_cv(self, state: State) -> Dict[str, JobParameters]:
         """ Узел анализа резюме кандидата. """
         cv_parameters = JobParameters()
 
-        cv_parameters.experience_years = self._get_cv_experience(state["cv_description"])
-        cv_parameters.hard_skills = self._get_cv_hard_skills(state["cv_description"])
+        cv_parameters.experience_years = await self._get_cv_experience(state["cv_description"])
+        cv_parameters.hard_skills = await self._get_cv_hard_skills(state["cv_description"])
         cv_parameters.soft_skills = list()
         vacancy_parameters.title = ""
 
         return { "cv_parameters": cv_parameters }
 
 
-    def _get_cv_experience(self, cv_description: str) -> float:
+    async def _get_cv_experience(self, cv_description: str) -> float:
         """ Функция узла '_analyse_cv' для определения опыта  """
         prompt = PromptTemplate(
             input_variables=["description"],
@@ -103,7 +103,7 @@ class CVAnalyseService:
         return float(experience)
 
 
-    def _get_cv_hard_skills(self, cv_description: str) -> List[Tuple[str, int]]:
+    async def _get_cv_hard_skills(self, cv_description: str) -> List[Tuple[str, int]]:
         """ Функция узла '_analyse_cv' для определения хард скилов в резюме кандидата. """
         prompt = PromptTemplate(
             input_variables=["description"],
@@ -157,7 +157,7 @@ class CVAnalyseService:
         return skill_pairs
 
 
-    def _analyse_vacancies(self, state: State) -> Dict[str, JobParameters]:
+    async def _analyse_vacancies(self, state: State) -> Dict[str, JobParameters]:
         """
         Узел, описывающий формирование из всех вакансий в хранилище
         объекты JobParameters для дальнейшего сравнения с резюме.
@@ -166,20 +166,20 @@ class CVAnalyseService:
         analysed_vacansies: List[JobParameters]
 
         for vacancy_filename in vacancies_filenames:
-            description: str = self.repository.get_vacancy_description()
+            description: str = self.repository.get_vacancy_description().text
             
             vacancy_parameters = JobParameters()
-            vacancy_parameters.experience_years = self._get_vacancy_experience(description)
-            vacancy_parameters.hard_skills = self._get_vacancy_hard_skills(description)
+            vacancy_parameters.experience_years = await self._get_vacancy_experience(description)
+            vacancy_parameters.hard_skills = await self._get_vacancy_hard_skills(description)
             vacancy_parameters.soft_skills = list()
-            vacancy_parameters.title = self._get_vacancy_name(description)
+            vacancy_parameters.title = await self._get_vacancy_name(description)
 
             analysed_vacansies.append(vacancy_parameters)
 
         return { "vacancies_parameters": analysed_vacansies }
 
 
-    def _get_vacancy_experience(self, description: str) -> float:
+    async def _get_vacancy_experience(self, description: str) -> float:
         """
         Функция узла 'analyse_vacancies' для определения
         минимального опыта работы, требуемого в вакансии.
@@ -210,7 +210,7 @@ class CVAnalyseService:
         return float(experience)
 
 
-    def _get_vacancy_hard_skills(self, description: str) -> List[Tuple[str, int]]:
+    async def _get_vacancy_hard_skills(self, description: str) -> List[Tuple[str, int]]:
         """
         Функция узла 'analyse_vacancies' для определения
         хард скиллов, требуемых в вакансии.
@@ -249,7 +249,7 @@ class CVAnalyseService:
         return hard_skills
 
 
-    def _compare_cv_with_vacancies(self, state: State) -> Dict[str, List[VacancyMatchingReport]]:
+    async def _compare_cv_with_vacancies(self, state: State) -> Dict[str, List[VacancyMatchingReport]]:
         """
         Узел, возвращающий результаты сравнений представленного
         кандидатом резюме с имеющимися вакансиями.
@@ -264,7 +264,8 @@ class CVAnalyseService:
 
         return { "matching_reports": report_list }
 
-    def _compare_by_llm(self, cv: JobParameters, vacancy: JobParameters) -> VacancyMatchingReport:
+
+    async def _compare_by_llm(self, cv: JobParameters, vacancy: JobParameters) -> VacancyMatchingReport:
         """
         Функция узла 'compare_cv_with_vacancies', производящее
         одиночное сравнение резюме с вакансией, используя LLM.
@@ -306,7 +307,7 @@ class CVAnalyseService:
         return report
 
 
-    def _get_vacancy_name(self, vacancy_filename: str) -> str:
+    async def _get_vacancy_name(self, vacancy_filename: str) -> str:
         """
         Функция узла 'compare_cv_with_vacancies', выявляющая
         название вакансии из её описания.
@@ -334,7 +335,7 @@ class CVAnalyseService:
         return response.content.strip()
 
 
-    def analyse(self, cv_description: str) -> Dict[str, List[VacancyMatchingReport]]:
+    async def analyse(self, cv_description: str) -> Dict[str, List[VacancyMatchingReport]]:
         """ Основной метод для анализа резюме. """
         initial_state = {
             "cv_description": cv_description,

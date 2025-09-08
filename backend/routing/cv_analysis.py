@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends
 
-from depends import get_job_service
+from depends import get_analyse_job_service
 from schemas.cv_analysis import VacancyMatchingReport
 from services.cv_analysis import CVAnalysisService
 
@@ -15,7 +15,7 @@ router = APIRouter(tags=["CV analysis"])
     description="Поиск подходящих под резюме вакансий",
 )
 async def get_matching_vacancies(
-    cv_description: str, cv_analysis_service: CVAnalysisService = Depends(get_job_service)
+    cv_description: str, cv_analysis_service: CVAnalysisService = Depends(get_analyse_job_service)
 ) -> List[VacancyMatchingReport]:
     """
     Ручка принимает резюме соискателя и возвращяет ему

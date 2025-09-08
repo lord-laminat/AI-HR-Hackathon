@@ -1,3 +1,5 @@
+from typing import List
+
 from schemas.cv_analysis import JobDescription
 from configs.config import config
 
@@ -13,7 +15,7 @@ class VacancyRepository:
         # итерация по всем именам в директории (файлы и папки)
         for entry in os.listdir(directory_path):
             full_path = os.path.join(directory_path, entry)
-            
+ 
             # убеждаемся, что выбранное имя - файл
             if os.path.isfile(full_path):
                 files.append(entry)
@@ -24,13 +26,13 @@ class VacancyRepository:
     def get_vacancy_description(self, file_title: str) -> JobDescription:
         """ Достаёт объект JobDescription из хранилища. """
         
-        job_description: JobDescription
+        job_description = JobDescription()
 
-        try: 
-            with open(f"{config["Paths"]["vacancies_dir_path"]}/{file_title}", "r") as file {
+        try:
+            with open(f"{config["Paths"]["vacancies_dir_path"]}/{file_title}", "r") as file:
                 job_description.text = file.read()
                 job_description.title = file_title
-            }
+
         except FileNotFoundError as ex:
             ...
             # TODO: добавить логирование ошибки
