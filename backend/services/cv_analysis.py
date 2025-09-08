@@ -9,8 +9,8 @@ from langchain.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
-from schemas.cv_analysis import JobDescription
-from repositories.cv_analysis import VacancyRepository, JobParameters, VacancyMatchingReport
+from schemas.cv_analysis import JobDescription, JobParameters, VacancyMatchingReport
+from repositories.cv_analysis import VacancyRepository
 
 
 class State(TypedDict):
@@ -20,7 +20,6 @@ class State(TypedDict):
     """
     cv_description: str
     cv_parameters: JobParameters
-    vacancies_list: List[str]
     vacancies_parameters: List[JobParameters]
 
 
@@ -52,14 +51,12 @@ class CVAnalyseService:
 
         # Узлы графа
         workflow.add_node("analyse_cv", self._analyse_cv)
-        workflow.add_node("get_vacancies_list", self._get_vacancies_list)
         workflow.add_node("analyse_vacancies", self._analyse_vacancies)
         workflow.add_node("compare_cv_with_vacancies", self._compare_cv_with_vacancies)
 
         # Ребра графа
         workflow.set_entry_point("analyse_cv")
-        workflow.add_edge("analyse_cv", "get_vacancies_list")
-        workflow.add_edge("get_vacancies_list", "analyse_vacancies")
+        workflow.add_edge("analyse_cv", "analyse_vacancies")
         workflow.add_edge("analyse_vacancies", "compare_cv_with_vacancies")
         workflow.add_edge("compare_cv_with_vacancies", END)
 
@@ -70,14 +67,14 @@ class CVAnalyseService:
         """ Узел анализа резюме кандидата. """
         cv_parameters = JobParameters()
 
-        cv_parameters.experience_years = self._get_experience(state["cv_description"])
-        cv_parameters.hard_skills = self._get_hard_skills(state["cv_description"])
+        cv_parameters.experience_years = self._get_cv_experience(state["cv_description"])
+        cv_parameters.hard_skills = self._get_cv_hard_skills(state["cv_description"])
         cv_parameters.soft_skills = list()
 
         return { "cv_parameters": cv_parameters }
 
 
-    def _get_experience(self, cv_description: str) -> float:
+    def _get_cv_experience(self, cv_description: str) -> float:
         """ Функция узла '_analyse_cv' для определения опыта  """
         prompt = PromptTemplate(
             input_variables=["description"],
@@ -104,7 +101,7 @@ class CVAnalyseService:
         return float(experience)
 
 
-    def _get_hard_skills(self, cv_description: str) -> List[Tuple[str, int]]:
+    def _get_cv_hard_skills(self, cv_description: str) -> List[Tuple[str, int]]:
         """ Функция узла '_analyse_cv' для определения хард скилов в резюме кандидата. """
         prompt = PromptTemplate(
             input_variables=["description"],
@@ -151,9 +148,99 @@ class CVAnalyseService:
         for i in range(len(skill_pairs)):
             # Разбиваем пару <skill_name>=<skill_grade> по '='
             skill_pairs[i] = skill_pairs[i].split('=')
-            
+ 
             # Приводим оценку skill_grade к типу int
             skill_pairs[i][1] = int(skill_pairs[i][1])
 
         return skill_pairs
 
+
+    def _analyse_vacancies(self, state: State) -> Dict[str, JobParameters]:
+        """
+        Узел, описывающий формирование из всех вакансий в хранилище
+        объекты JobParameters для дальнейшего сравнения с резюме.
+        """
+        vacancies_filenames: List[str] = self.repository.get_vacancies_list()
+        analysed_vacansies: List[JobParameters]
+
+        for vacancy_filename in vacancies_filenames:
+            description: str = self.repository.get_vacancy_description()
+            
+            vacancy_parameters = JobParameters()
+            vacancy_parameters.experience_years = self._get_vacancy_experience(description)
+            vacancy_parameters.hard_skills = self._get_vacancy_hard_skills(description)
+            vacancy_parameters.soft_skills = list()
+
+            analysed_vacansies.append(vacancy_parameters)
+
+        return { "vacancies_parameters": analysed_vacansies }
+
+
+    def _get_vacancy_experience(self, description: str) -> float:
+        """
+        Функция узла 'analyse_vacancies' для определения
+        минимального опыта работы, требуемого в вакансии.
+        """
+        prompt = PromptTemplate(
+            input_variables=["description"],
+            template="""
+            Ты - HR агент. Твоя задача - проанализировать представленное описание вакансии.
+            Выяви из него минимальный требуемый опыт работы.
+
+            Проанализируй следующее описание вакансии:
+            # начало описания
+            {description}
+            # конец описания
+
+            Строго соблюди формат ответа.
+            Формат ответа: одно число - требуемое от кандидата количество лет опыта.
+            
+            Ответ:
+            """
+        )
+
+        message = HumanMessage(content=prompt.format(description=cv_description))
+        response = await self.llm.ainvoke([message])
+
+        experience = re.search(r"\d+.?\d*", response.content).group()
+
+        return float(experience)
+
+
+    def _get_vacancy_hard_skills(self, description: str) -> List[Tuple[str, int]]:
+        """
+        Функция узла 'analyse_vacancies' для определения
+        хард скиллов, требуемых в вакансии.
+        """
+        prompt = PromptTemplate(
+            input_variables=["description"],
+            template="""
+            Ты - HR агент. Твоя задача - проанализировать представленное описание вакансии.
+            Выяви из него требуемые хард скилы и их уровень. Требуемый уровень оцени по шкале от 1 до 3. 
+            
+            Проанализируй следующее описание вакансии:
+            # начало описания
+            {description}
+            # конец описания
+
+            Строго соблюди формат ответа.
+            Формат ответа: <skill_1>=<skill_1_grade>, <skill_2>=<skill_2_grade>, ...
+            
+            Обрати внимание на параметр <grade> у каждого перечисляемого скилла.
+            <grade> - численная оценка (по шкале от 0 до 3 включительно).
+            Определить требуемый уровень навыка нужно исходя из описанных обязанностей и требований к кандидату по следующему принципу:
+            0 - навык указан как необязательный.
+            1 - Junior уровень владения навыком.
+            2 - Middle yровень владения навыком.
+            3 - Senior уровень владения навыком.
+
+            Ответ:
+            """
+        )
+
+        message = HumanMessage(content=prompt.format(description=cv_description))
+        response = await self.llm.ainvoke([message])
+
+        hard_skills = _parse_skills(response.content)
+
+        return hard_skills
