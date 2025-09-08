@@ -66,13 +66,15 @@ class CVAnalysisService:
 
     async def _analyse_cv(self, state: State) -> Dict[str, JobParameters]:
         """ Узел анализа резюме кандидата. """
-        cv_parameters = JobParameters()
 
-        cv_parameters.experience_years = await self._get_cv_experience(state["cv_description"])
-        cv_parameters.hard_skills = await self._get_cv_hard_skills(state["cv_description"])
-        cv_parameters.soft_skills = list()
-        vacancy_parameters.title = ""
-
+        cv_parameters_data = {
+            "experience_years": await self._get_cv_experience(state["cv_description"]),
+            "hard_skills": await self._get_cv_hard_skills(state["cv_description"]),
+            "soft_skills": list(),
+            "title": ""
+        }
+        cv_parameters = JobParameters(**cv_parameters_data)
+        
         return { "cv_parameters": cv_parameters }
 
 
@@ -109,7 +111,7 @@ class CVAnalysisService:
             input_variables=["description"],
             template="""
             Ты - HR агент. Твоя задача - оценить способности кандидата по его резюме.
-            Выяви из него хард скилы и, учитывая описание опыта работы кандидата, оцени их по шкале от 1 до 3. 
+            Выяви из него хард скилы и, учитывая описание опыта работы кандидата, оцени их по шкале от 0 до 3. 
             
             Проанализируй следующее резюме:
             # начало описания
@@ -118,7 +120,8 @@ class CVAnalysisService:
 
             Строго соблюди формат ответа.
             Формат ответа: <skill_1>=<skill_1_grade>, <skill_2>=<skill_2_grade>, ...
-            
+            Обрати внимание, что слова, составляющие один скилл, разделяются нижним подчеркиванием '_'.
+
             Обрати внимание на параметр <grade> у каждого перечисляемого скилла.
             <grade> - численная оценка (по шкале от 0 до 3 включительно).
             Определить уровень владения навыком нужно исходя из описанного соискателем опыта по следующему принципу:
@@ -134,7 +137,7 @@ class CVAnalysisService:
         message = HumanMessage(content=prompt.format(description=cv_description))
         response = await self.llm.ainvoke([message])
 
-        hard_skills = _parse_skills(response.content)
+        hard_skills = self._parse_skills(response.content)
 
         return hard_skills
 
@@ -149,8 +152,13 @@ class CVAnalysisService:
 
         for i in range(len(skill_pairs)):
             # Разбиваем пару <skill_name>=<skill_grade> по '='
-            skill_pairs[i] = skill_pairs[i].split('=')
- 
+            skill_pairs[i] = skill_pairs[i].strip().strip(',').split('=')
+
+            print(skill_pairs, skill_pairs[i])
+
+            # Заменяем разделитель '_' на пробел
+            skill_pairs[i][0].replace('_', ' ')
+
             # Приводим оценку skill_grade к типу int
             skill_pairs[i][1] = int(skill_pairs[i][1])
 
@@ -228,7 +236,8 @@ class CVAnalysisService:
 
             Строго соблюди формат ответа.
             Формат ответа: <skill_1>=<skill_1_grade>, <skill_2>=<skill_2_grade>, ...
-            
+            Обрати внимание, что слова, составляющие один скилл, разделяются нижним подчеркиванием '_'.
+
             Обрати внимание на параметр <grade> у каждого перечисляемого скилла.
             <grade> - численная оценка (по шкале от 0 до 3 включительно).
             Определить требуемый уровень навыка нужно исходя из описанных обязанностей и требований к кандидату по следующему принципу:
@@ -337,11 +346,10 @@ class CVAnalysisService:
 
     async def analyse(self, cv_description: str) -> Dict[str, List[VacancyMatchingReport]]:
         """ Основной метод для анализа резюме. """
+
+
         initial_state = {
-            "cv_description": cv_description,
-            "cv_parameters": JobParameters(),
-            "vacancies_parameters": list(),
-            "matching_reports": list()
+            "cv_description": cv_description
         }
 
         result = await self.workflow.ainvoke(initial_state)

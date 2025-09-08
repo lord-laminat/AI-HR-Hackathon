@@ -21,4 +21,4 @@ async def get_matching_vacancies(
     Ручка принимает резюме соискателя и возвращяет ему
     ответ от сервиса по анализу и поиску подходящих вакансий.
     """
-    return cv_analysis_service.analyse(cv_description)
+    return await cv_analysis_service.analyse(cv_description)

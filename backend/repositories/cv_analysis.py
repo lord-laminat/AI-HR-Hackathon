@@ -1,7 +1,10 @@
 from typing import List
 
 from schemas.cv_analysis import JobDescription
-from configs.config import config
+from configparser import ConfigParser
+
+config = ConfigParser()
+config.read("../configs/config.ini")
 
 
 class VacancyRepository:
