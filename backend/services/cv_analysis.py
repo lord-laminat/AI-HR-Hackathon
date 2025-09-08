@@ -21,6 +21,7 @@ class State(TypedDict):
     cv_description: str
     cv_parameters: JobParameters
     vacancies_parameters: List[JobParameters]
+    matching_reports: List[VacancyMatchingReport]
 
 
 class CVAnalyseService:
@@ -70,6 +71,7 @@ class CVAnalyseService:
         cv_parameters.experience_years = self._get_cv_experience(state["cv_description"])
         cv_parameters.hard_skills = self._get_cv_hard_skills(state["cv_description"])
         cv_parameters.soft_skills = list()
+        vacancy_parameters.title = ""
 
         return { "cv_parameters": cv_parameters }
 
@@ -170,6 +172,7 @@ class CVAnalyseService:
             vacancy_parameters.experience_years = self._get_vacancy_experience(description)
             vacancy_parameters.hard_skills = self._get_vacancy_hard_skills(description)
             vacancy_parameters.soft_skills = list()
+            vacancy_parameters.title = self._get_vacancy_name(description)
 
             analysed_vacansies.append(vacancy_parameters)
 
@@ -202,7 +205,7 @@ class CVAnalyseService:
         message = HumanMessage(content=prompt.format(description=cv_description))
         response = await self.llm.ainvoke([message])
 
-        experience = re.search(r"\d+.?\d*", response.content).group()
+        experience = re.search(r"\d+\.?\d*", response.content).group()
 
         return float(experience)
 
@@ -244,3 +247,88 @@ class CVAnalyseService:
         hard_skills = _parse_skills(response.content)
 
         return hard_skills
+
+
+    def _compare_cv_with_vacancies(self, state: State) -> Dict[str, List[VacancyMatchingReport]]:
+        """
+        Узел, возвращающий результаты сравнений представленного
+        кандидатом резюме с имеющимися вакансиями.
+        """
+        cv_parameters: JobParameters = state["cv_parameters"]
+        vacancies_parameters_list: List[JobParameters] = state["vacancies_parameters"]
+
+        report_list = list()
+
+        for vacancy in vacancies_parameters_list:
+            report_list.append(self._compare_by_llm(cv_parameters, vacancy))
+
+        return { "matching_reports": report_list }
+
+    def _compare_by_llm(self, cv: JobParameters, vacancy: JobParameters) -> VacancyMatchingReport:
+        """
+        Функция узла 'compare_cv_with_vacancies', производящее
+        одиночное сравнение резюме с вакансией, используя LLM.
+        """
+        prompt = PromptTemplate(
+            input_variables=["cv_hard_skills", "vacancy_hard_skills", "cv_experience", "vacancy_experience"],
+            template="""
+            Ты - HR агент. Тебе представлены краткие описания вакансии и резюме кондидата.
+            Твоя задача - оценить степень соответствия кандидата рассматриваемой вакансии.
+            Тебе нужно проанализировать опыт соискателя и сопоставить имеющиеся у него навыки с теми, что требуются в вакансии.
+
+            Скиллы, требуемые в вакансии с оценкой их уровня:
+            {vacancy_hard_skills}
+
+            Скиллы, описанные в резюме кандидата с оценкой их уровня:
+            {cv_hard_skills}
+
+            Требуемый опыт/опыт кандидата: {cv_experience}/{vacancy_experience}
+
+            Ответь строго в формате <процент_соответствия>%
+            Ответ:
+            """
+        )
+
+        message = HumanMessage(content=prompt.format(
+            cv_hard_skills=", ".join(cv.hard_skills),
+            vacancy_hard_skills=", ".join(vacancy.hard_skills),
+            cv_experience=str(cv.experience_years),
+            vacancy_experience=str(vacancy.experience_years)
+        ))
+        response = await self.llm.ainvoke([message])
+
+        match_result: float = float(re.search(r"\d+\.?\d*\%", response.content).group().strip('%'))
+
+        report = VacancyMatchingReport()
+        report.vacancy_title = vacancy.title
+        report.matching = match_result
+
+        return report
+
+
+    def _get_vacancy_name(self, vacancy_filename: str) -> str:
+        """
+        Функция узла 'compare_cv_with_vacancies', выявляющая
+        название вакансии из её описания.
+        """
+        prompt = PromptTemplate(
+            input_variables=["description"],
+            template="""
+            Ты - HR агент. Ты анализируешь представленное описание вакансии.
+            Твоя задача - просто определить название вакансии из описания.
+            
+            # начало описания
+            {description}
+            # конец описания
+
+            Строго соблюди формат ответа.
+            Формат ответа: <название_вакансии>
+            
+            Ответ:
+            """
+        )
+
+        message = HumanMessage(content=prompt.format(description=cv_description))
+        response = await self.llm.ainvoke([message])
+
+        return response.content.strip()

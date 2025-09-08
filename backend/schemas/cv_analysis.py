@@ -16,6 +16,7 @@ class JobParameters(BaseModel):
     Объект, описывающий параметры, по которым
     определяется соответствие кандидата вакансии.
     """
+    title: str
     experience_years: float
     hard_skills: List[Tuple[str, int]]
     soft_skills: List[Tuple[str, int]]
