@@ -6,7 +6,7 @@ class VacancyRepository:
     """ Класс, описывающий хранение объектов JobDescription. """
 
     def get_vacancies_list(self) -> List[str]:
-        """ Возвращает список полных путей до файлов, лежащих в директории для вакансий. """
+        """ Возвращает список файлов, лежащих в директории для вакансий. """
         directory_path = config["Paths"]["vacancies_dir_path"]
         files = list()
 
