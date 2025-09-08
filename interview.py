@@ -1,13 +1,25 @@
 import asyncio
 import os
 from voice import recognize_speech_segment
-from langchain_gigachat.chat.model import GigaChat
+from langchain_gigachat import GigaChat
 from dotenv import load_dotenv
+#import requests
+#import base64
+import simpleaudio as sa
+import urllib3
+#import uuid
+#import wave
+import json
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 API_KEY = os.getenv("GIGACHAT_API_KEY")
+YANDEX_TOKEN = os.getenv("YANDEX_TOKEN")
 if not API_KEY:
   raise ValueError("Отсутствует ключ GIGACHAT_API_KEY в .env")
+elif not YANDEX_TOKEN:
+  raise ValueError("Отсутствует ключ CLIENT_IDs в .env")
 
 EXTENDED_SYSTEM_PROMPT = {
     "role": "system",
@@ -72,64 +84,153 @@ llm = GigaChat(
   timeout=120,
   verify_ssl_certs=False
 )
+"""
+def tts_yandex(text, voice="lera", format="lpcm", sample_rate_hz=48000):
+    
+    #text : str - текст для озвучивания
+    #voice: str - голос, например 'lera', 'alena'
+    #format: str - формат аудио ('lpcm' или 'ogg')
+    #sample_rate_hz: int - частота дискретизации
+    
+    url = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
+    
+    headers = {
+        "Authorization": f"Bearer {YANDEX_TOKEN}"
+    }
+    
+    data = {
+        "text": text,
+        "voice": voice,
+        "format": format,
+        "sampleRateHertz": sample_rate_hz,
+        "speed": 1.0
+    }
+    
+    response = requests.post(url, headers=headers, data=data)  # <- тут data, а не json
+    response.raise_for_status()
+    audio_content = response.content
 
+    # Воспроизведение LPCM через simpleaudio
+    if format == "lpcm":
+        wave_obj = sa.WaveObject(audio_content, num_channels=1, bytes_per_sample=2, sample_rate=sample_rate_hz)
+        play_obj = wave_obj.play()
+        play_obj.wait_done()
+    else:
+        with open("output.ogg", "wb") as f:
+            f.write(audio_content)
+        print("Аудио сохранено в output.ogg")
+"""
 async def send_to_gigachat(messages):
-  #Асинхронный вызов модели с передачей списка сообщений 
-  response = await llm.invoke(messages)
+  #Асинхронный вызов модели с передачей списка сообщений(проверяем синхронный без await)
+  response = llm.invoke(messages)
   # respone имеет поле content с текстом ответа
   return response.content
 
+# Функция синтеза и воспроизведения речи с SaluteSpeech
+"""def tts_salute(text, token):
+    url = "https://smartspeech.sber.ru/rest/v1/text:synthesize"
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {token}'
+    }
+    payload = {
+        "text": text,
+        "voice": "Ost_24000",  # Александра 24кГЦ
+        "format": "wav"
+    }
+    response = requests.post(url, json=payload, headers=headers,verify=False)
+    response.raise_for_status()
+    audio_base64 = response.json().get("payload", {}).get("audio", "")
+    if not audio_base64:
+      raise ValueError("Не удалось получить аудио из ответа SaluteSpeech")
+    
+    audio_data = base64.b64decode(audio_base64)
+    wave_obj = sa.WaveObject(audio_data, 1, 2, 48000)
+    play_obj = wave_obj.play()
+    play_obj.wait_done()
+"""
 async def interview_flow():
   messages = [SYSTEM_PROMPT]
   
-  # Добавляем фиксированные вводные вопросы в историю диалога (роль assistant)
-  for question in INITIAL_QUESTIONS:
-    messages.append({"role": "assistant", "content": question})
-    
-    client_intro_count = 0
-    max_intro = len(INITIAL_QUESTIONS)
-    questions_asked = max_intro
-    max_questions = 10
-    
-    while True:
-      if client_intro_count < max_intro:
-        print(f"Ожидание ответа на вводный вопрос №{client_intro_count + 1}...")
-        segment_text = recognize_speech_segment()
-        messages.append({"role": "user", "content": segment_text})
-        print(f"Ответ на вводный вопрос: {segment_text}")
-        client_intro_count += 1
-        continue
+  # 1. Задаем фиксированные вопросы и принимаем ответы
+  for i, question in enumerate(INITIAL_QUESTIONS):
+      print(f"Вопрос #{i+1}: {question}")
+      messages.append({"role": "assistant", "content": question})
+      #tts_yandex(question, voice="lera") #Озвучиваем фиксированный вопрос
+      print(f"Ожидание ответа на вопрос #{i+1} (или 'q' для выхода)...")
       
-      if questions_asked < max_questions:
-        print(f"Ожидание ответа на вопрос №{questions_asked + 1}...")
-        segment_text = recognize_speech_segment()
-        messages.append({"role": "user", "content": segment_text})
-        print(f"Ответ кандидата: {segment_text}")
+      answer = recognize_speech_segment()  # <- получаем ответ
+      if not answer:
+        answer = ""  # если распознавание вернуло None
+      
+      if answer.lower() in ["q", "exit"]:
+          print("Кандидат досрочно завершил собеседование.")
+          messages.append({"role": "user", "content": "[досрочное завершение]"})
+          break
+      messages.append({"role": "user", "content": answer})
 
-        ai_question = await send_to_gigachat(messages)
-        print(f"ИИ спрашивает: {ai_question}")
-        messages.append({"role": "assistant", "content": ai_question})
-        
-        questions_asked += 1
-      else:
-        print("Собеседование завершено.")
-        break
-      
-        # Формируем итоговый отчет
-    report_prompt = {
-        "role": "system",
-        "content": (
-            "На основе всей истории собеседования составь краткий отчет: "
-            "выдели сильные стороны кандидата, "
-            "укажи, какие навыки ему нужно улучшить или изучить, "
-            "чтобы успешно пройти собеседование в следующий раз."
-        )
-    }
-    messages.append(report_prompt)
+  questions_asked = len(INITIAL_QUESTIONS)
+  max_questions = 12  # всего вопросов (фиксированных + адаптивных)
 
-    print("\nГенерация итогового отчета...\n")
-    final_report = await send_to_gigachat(messages)
-    print(final_report)
+    # 2. Задаем вопросы от ИИ, адаптируя их под ответы
+  while questions_asked < max_questions:
+      print(f"Ожидание очередного вопроса №{questions_asked + 1} от ИИ...")
       
+      ai_question = await send_to_gigachat(messages)
+      print(f"ИИ спрашивает: {ai_question}")
+      messages.append({"role": "assistant", "content": ai_question})
+      #tts_yandex(ai_question, voice="lera")# Вызов озвучивания вопроса нейросети
+      print(f"Ожидание ответа на вопрос №{questions_asked + 1}...")
+      answer = recognize_speech_segment()
+      if not answer:
+        answer = ""  # если распознавание вернуло None
+      
+      if answer.lower() in ["q", "exit"]:
+          print("Кандидат досрочно завершил собеседование.")
+          messages.append({"role": "user", "content": "[досрочное завершение]"})
+          break
+
+      # Отправляем ответ кандидата + предыдущие сообщения на проверку мата в нейросеть
+      check_prompt = [
+          {"role": "system", "content": "Проверяй ответы кандидата на нецензурную лексику."},
+          {"role": "user", "content": answer}]
+      result = await send_to_gigachat(check_prompt)
+      # Если нейросеть вернула команду бан — прерываем собеседование
+      if "[бан_за_мат]" in result:
+          print("Кандидат использовал нецензурную лексику. Собеседование завершено.")
+          messages.append({"role": "assistant", "content": result})
+          break
+
+      print(f"Ответ кандидата: {answer}")
+      messages.append({"role": "user", "content": answer})
+      questions_asked += 1
+
+      
+  # 3. Генерация итогового отчета
+  report_prompt = [
+      SYSTEM_PROMPT,  # system message должен быть первым
+      {"role": "user", "content": "На основе всей истории собеседования составь итоговый отчет в формате JSON. "
+                                "Выдели сильные стороны, навыки для улучшения, замечания (например, мат). "
+                                "Выведи JSON, например: "
+                                "{'candidate':'Имя','strengths':[],'improvements':[],'warnings':[]}"},
+      {"role": "user", "content": json.dumps(messages)}  # передаем всю историю собеседования
+  ]
+
+  final_report_text = await send_to_gigachat(report_prompt)
+
+  # Преобразуем текст отчета в JSON и сохраняем
+  try:
+      report_json = json.loads(final_report_text)
+  except json.JSONDecodeError:
+      report_json = {"candidate": "Не указано", "interview_report": final_report_text}
+
+  report_filename = os.path.join(os.getcwd(), "interview_report.json")
+  with open(report_filename, "w", encoding="utf-8") as f:
+      json.dump(report_json, f, ensure_ascii=False, indent=4)
+
+  print(f"Отчет сохранен в {report_filename}")
+
+
 if __name__ == "__main__":
-  asyncio.run(interview_flow())
+    asyncio.run(interview_flow())
