@@ -332,3 +332,21 @@ class CVAnalyseService:
         response = await self.llm.ainvoke([message])
 
         return response.content.strip()
+
+
+    def analyse(self, cv_description: str) -> Dict[str, List[VacancyMatchingReport]]:
+        """ Основной метод для анализа резюме. """
+        initial_state = {
+            "cv_description": cv_description,
+            "cv_parameters": JobParameters(),
+            "vacancies_parameters": list(),
+            "matching_reports": list()
+        }
+
+        result = await self.workflow.ainvoke(initial_state)
+
+        analysis_result = {
+            "analysis_results": result["matching_reports"]
+        }
+
+        return analysis_result
